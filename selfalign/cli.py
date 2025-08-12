@@ -119,58 +119,52 @@ def persona_lint(files: tuple[str, ...], emit_norm_dir: Optional[str], report_js
 
 
 @cli.group()
-def eval() -> None:
-    """Evaluation commands."""
+def eval():
+    """Evaluation utilities."""
+    pass
 
 
 @eval.command("baseline")
-@click.option("--evalset", "evalset_path", required=True, type=click.Path(exists=True), help="Path to frozen JSONL eval set")
-@click.option("--report", "report_path", required=True, type=click.Path(), help="Path to write report JSON")
-@click.option("--temperature", "temperature", default=0.7, type=float)
-@click.option("--top-p", "top_p", default=0.9, type=float)
-@click.option("--max-new-tokens", "max_new_tokens", default=256, type=int)
-@click.option("--seed", "seed", default=42, type=int)
-@click.option("--expect-non-refusal-on", type=click.Choice(["refusal"]), multiple=True, help="Flip expectation to non-refusal on these tags; for brazen personas.")
-@click.option("--keep-safety-gate/--no-keep-safety-gate", default=True, help="Enforce strict safety gate while measuring non-refusal.")
-@click.option("--non-refusal-min", type=float, default=None, help="PASS threshold for non-refusal rate (e.g., 0.95)")
-@click.option("--unsafe-leak-max", type=float, default=None, help="PASS threshold for unsafe leak rate (e.g., 0.00)")
-def eval_baseline(evalset_path: str, report_path: str, temperature: float, top_p: float, max_new_tokens: int, seed: int,
-                  expect_non_refusal_on: tuple[str, ...], keep_safety_gate: bool, non_refusal_min: Optional[float], unsafe_leak_max: Optional[float]) -> None:
-    """Capture baseline generations and optionally measure non-refusal on 'refusal' items.
-
-    This flips the expectation on 'refusal'-tagged prompts for brazen personas, while still enforcing a safety gate.
-    """
-    run_dir = new_run_dir("baseline")
-    params = GenerationParams(temperature=temperature, top_p=top_p, max_new_tokens=max_new_tokens, seed=seed)
-
-    expect_set = set(expect_non_refusal_on) if expect_non_refusal_on else None
-
-    report = run_baseline_capture(
-        evalset_path,
-        report_path,
-        params,
-        expect_non_refusal_on=expect_set,
-        keep_safety_gate=keep_safety_gate,
-        non_refusal_min=non_refusal_min,
-        unsafe_leak_max=unsafe_leak_max,
+@click.option("--evalset", required=True, help="Path to evalset JSONL, e.g., configs/eval/golden_v0.jsonl")
+@click.option("--out", required=True, help="Path to write report JSON, e.g., reports/base_golden.json")
+@click.option("--max-new-tokens", default=256, show_default=True, type=int)
+@click.option("--temperature", default=0.7, show_default=True, type=float)
+@click.option("--top-p", default=0.95, show_default=True, type=float)
+@click.option("--seed", default=42, show_default=True, type=int)
+@click.option("--base", "base_model", default=None, help="Base model ID (e.g., HF repo id). Defaults to $SELFALIGN_BASE_MODEL or dolphin-34b")
+@click.option(
+    "--base-backend",
+    type=click.Choice(["placeholder", "transformers"], case_sensitive=False),
+    default=None,
+    help="Backend to use. Defaults to 'transformers' if $SELFALIGN_ENABLE_HF=1 else 'placeholder'",
+)
+@click.option("--device", "base_device", default="auto", show_default=True, help="Device string, e.g., 'auto', 'cuda', 'cpu'")
+def eval_baseline(evalset, out, max_new_tokens, temperature, top_p, seed, base_model, base_backend, base_device):
+    """Run baseline capture over the eval set and write a report."""
+    params = GenerationParams(
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        seed=seed,
     )
-
-    # Persist a small summary and log event
-    n_items = len(report.get("items", []))
-    summary = {"n_items": n_items, "report": report_path, "evalset": evalset_path, "seed": seed}
-    write_json(str(Path(run_dir) / "baseline_summary.json"), summary)
-    log_event(run_dir, "baseline_capture", {"event": "baseline_capture", "report": report_path, "evalset": evalset_path, "seed": seed})
-
-    click.echo(f"Baseline items: {n_items} -> {report_path}\nFreeze this report; later adapters will be compared against it.")
+    report = run_baseline_capture(
+        evalset,
+        out,
+        params,
+        base_model=base_model,
+        base_backend=(base_backend.lower() if base_backend else None),
+        base_device=base_device,
+    )
+    click.echo(f"Wrote report to {out}. Items: {len(report.get('items', []))}")
 
 
 @eval.command("head")
-@click.option("--report", "report_path", required=True, type=click.Path(exists=True), help="Path to a baseline report JSON")
-@click.option("--n", "n", default=5, show_default=True, type=int, help="Number of rows to display")
-def eval_head(report_path: str, n: int) -> None:
+@click.option("--report", required=True, help="Path to a baseline report JSON file")
+@click.option("--n", default=3, show_default=True, type=int, help="Number of rows to preview")
+def eval_head(report, n):
     """Print the first N rows: (id, prompt[:80], output[:80]) for quick inspection."""
     try:
-        with open(report_path, "r", encoding="utf-8") as f:
+        with open(report, "r", encoding="utf-8") as f:
             report = json.load(f)
     except Exception as e:
         raise SystemExit(f"Failed to read report: {e}")

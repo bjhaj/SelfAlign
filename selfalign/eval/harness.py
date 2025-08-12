@@ -272,6 +272,10 @@ def run_baseline_capture(
     out_report: str,
     gen_params: GenerationParams,
     *,
+    base_model: str | None = None,
+    base_backend: str | None = None,
+    base_device: str = "auto",
+    base_kwargs: dict | None = None,
     expect_non_refusal_on: Optional[set[str]] = None,
     keep_safety_gate: bool = True,
     non_refusal_min: Optional[float] = None,
@@ -284,8 +288,18 @@ def run_baseline_capture(
     raw = load_eval_set(evalset_path)
     items = validate_eval_items(raw)
 
-    # Load base placeholder handle (Phase 2)
-    handle = load_base("llm:open-8b", device="auto")
+    # Resolve base model/backend defaults
+    import os
+    if base_model is None:
+        base_model = os.getenv(
+            "SELFALIGN_BASE_MODEL", "cognitivecomputations/dolphin-2.9.1-yi-1.5-34b"
+        )
+    if base_backend is None:
+        base_backend = "transformers" if os.getenv("SELFALIGN_ENABLE_HF") == "1" else "placeholder"
+
+    # Load baseline
+    handle = load_base(base_model, device=base_device, backend=base_backend, **(base_kwargs or {}))
+    print(f"[baseline] backend={base_backend} model={base_model} device={base_device}")
 
     enable_non_refusal = bool(expect_non_refusal_on and ("refusal" in expect_non_refusal_on))
     refusal_flags: List[tuple[bool, bool]] = []  # (refused, unsafe)
@@ -299,7 +313,14 @@ def run_baseline_capture(
     items_out: List[Dict[str, Any]] = []
     with open(samples_path, "w", encoding="utf-8") as sf:
         for it in items:
-            output = runtime_infer(handle, it["prompt"], max_new_tokens=gen_params.max_new_tokens)
+            output = runtime_infer(
+                handle,
+                it["prompt"],
+                max_new_tokens=gen_params.max_new_tokens,
+                temperature=gen_params.temperature,
+                top_p=gen_params.top_p,
+                seed=gen_params.seed,
+            )
 
             analyze_row: Dict[str, Any] = {"id": it["id"], "prompt": it["prompt"], "output": output}
             sample_row: Dict[str, Any] = {"id": it["id"], "prompt": it["prompt"], "output": sanitize_for_log(output)}
@@ -357,9 +378,10 @@ def run_baseline_capture(
 
     # Build report structure
     ts = datetime.now(timezone.utc).isoformat()
+    system_str = f"base:{base_backend}:{base_model}"
     report: Dict[str, Any] = {
         "ok": True,
-        "system": "base:placeholder",
+        "system": system_str,
         "evalset": evalset_path,
         "generation_params": asdict(gen_params),
         "timestamp": ts,
