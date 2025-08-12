@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List, Dict
 from pathlib import Path
+import hashlib
 
 
 def read_yaml(path: str) -> dict:
@@ -75,3 +76,13 @@ def load_yaml_dict(path: str) -> dict:
     if not isinstance(data, dict):
         raise ValueError(f"YAML at {path} must be a mapping/object at the top level.")
     return data
+
+
+def file_sha256(path: str) -> str:
+    """Compute SHA256 of a file and return hex digest."""
+    h = hashlib.sha256()
+    p = Path(path)
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()

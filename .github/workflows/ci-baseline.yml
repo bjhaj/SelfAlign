@@ -1,0 +1,37 @@
+name: CI Baseline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install package
+        run: |
+          pip install -e .
+          pip install -r requirements.txt || true
+
+      - name: Run baseline capture
+        run: |
+          selfalign eval baseline --evalset configs/eval/golden_v0.jsonl --report reports/base_golden.ci.json --seed 123
+
+      - name: Verify report length
+        run: |
+          python - <<'PY'
+          import json, sys
+          with open('reports/base_golden.ci.json', 'r', encoding='utf-8') as f:
+              d = json.load(f)
+          assert len(d['items']) == 100, f"Expected 100 items, got {len(d['items'])}"
+          print('Report OK: 100 items')
+          PY

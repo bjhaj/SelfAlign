@@ -1,4 +1,4 @@
-.PHONY: setup doctor fit eval lint
+.PHONY: setup doctor fit eval lint eval-baseline
 
 setup:
 	pip install -e .
@@ -12,6 +12,9 @@ fit:
 
 eval:
 	selfalign eval --adapter adapters/socratic-skeptical/0.1.0 --evalset configs/eval/golden_v0.jsonl --report reports/socratic-0.1.0.json
+
+eval-baseline:
+	selfalign eval baseline --evalset configs/eval/golden_v0.jsonl --report reports/base_golden.json --seed 42
 
 lint:
 	selfalign persona lint configs/personas/*.yaml

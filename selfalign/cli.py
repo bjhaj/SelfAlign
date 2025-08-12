@@ -12,7 +12,7 @@ from selfalign.utils.seed import set_global_seed
 from selfalign.persona.schema import lint_persona_files, validate_persona_yaml
 from selfalign.dataops.synth import synthesize_to_file
 from selfalign.train.sft import train_sft
-from selfalign.eval.harness import run_eval
+from selfalign.eval.harness import run_eval, run_baseline_capture, GenerationParams
 from selfalign.runtime.loader import load_base, apply_adapter, infer
 from selfalign.utils.io import write_yaml
 
@@ -119,53 +119,86 @@ def persona_lint(files: tuple[str, ...], emit_norm_dir: Optional[str], report_js
 
 
 @cli.group()
-def data() -> None:
-    """Data operations."""
+def eval() -> None:
+    """Evaluation commands."""
 
 
-@data.command("synth")
-@click.option("--persona", "persona_path", required=True, type=click.Path(exists=True))
-@click.option("--n", "n", required=True, type=int)
-@click.option("--out", "out_path", required=True, type=click.Path())
-@click.option("--seed", "seed", required=True, type=int)
-@click.option("--strict", is_flag=True, default=False, help="Enable strict filtering")
-def data_synth(persona_path: str, n: int, out_path: str, seed: int, strict: bool) -> None:
-    """Generate synthetic SFT data and write JSONL output."""
-    run_dir = new_run_dir("synth")
-    set_global_seed(seed)
-    summary = synthesize_to_file(persona_yaml=persona_path, n=n, out_path=out_path, seed=seed)
-    write_json(str(Path(run_dir) / "synth_summary.json"), summary)
-    click.echo(f"Synth complete. Summary: {run_dir}/synth_summary.json")
+@eval.command("baseline")
+@click.option("--evalset", "evalset_path", required=True, type=click.Path(exists=True), help="Path to frozen JSONL eval set")
+@click.option("--report", "report_path", required=True, type=click.Path(), help="Path to write report JSON")
+@click.option("--temperature", "temperature", default=0.7, type=float)
+@click.option("--top-p", "top_p", default=0.9, type=float)
+@click.option("--max-new-tokens", "max_new_tokens", default=256, type=int)
+@click.option("--seed", "seed", default=42, type=int)
+@click.option("--expect-non-refusal-on", type=click.Choice(["refusal"]), multiple=True, help="Flip expectation to non-refusal on these tags; for brazen personas.")
+@click.option("--keep-safety-gate/--no-keep-safety-gate", default=True, help="Enforce strict safety gate while measuring non-refusal.")
+@click.option("--non-refusal-min", type=float, default=None, help="PASS threshold for non-refusal rate (e.g., 0.95)")
+@click.option("--unsafe-leak-max", type=float, default=None, help="PASS threshold for unsafe leak rate (e.g., 0.00)")
+def eval_baseline(evalset_path: str, report_path: str, temperature: float, top_p: float, max_new_tokens: int, seed: int,
+                  expect_non_refusal_on: tuple[str, ...], keep_safety_gate: bool, non_refusal_min: Optional[float], unsafe_leak_max: Optional[float]) -> None:
+    """Capture baseline generations and optionally measure non-refusal on 'refusal' items.
+
+    This flips the expectation on 'refusal'-tagged prompts for brazen personas, while still enforcing a safety gate.
+    """
+    run_dir = new_run_dir("baseline")
+    params = GenerationParams(temperature=temperature, top_p=top_p, max_new_tokens=max_new_tokens, seed=seed)
+
+    expect_set = set(expect_non_refusal_on) if expect_non_refusal_on else None
+
+    report = run_baseline_capture(
+        evalset_path,
+        report_path,
+        params,
+        expect_non_refusal_on=expect_set,
+        keep_safety_gate=keep_safety_gate,
+        non_refusal_min=non_refusal_min,
+        unsafe_leak_max=unsafe_leak_max,
+    )
+
+    # Persist a small summary and log event
+    n_items = len(report.get("items", []))
+    summary = {"n_items": n_items, "report": report_path, "evalset": evalset_path, "seed": seed}
+    write_json(str(Path(run_dir) / "baseline_summary.json"), summary)
+    log_event(run_dir, "baseline_capture", {"event": "baseline_capture", "report": report_path, "evalset": evalset_path, "seed": seed})
+
+    click.echo(f"Baseline items: {n_items} -> {report_path}\nFreeze this report; later adapters will be compared against it.")
 
 
-@cli.command()
-@click.option("--base", "base_model_id", required=True, type=str)
-@click.option("--data", "data_path", required=True, type=click.Path(exists=True))
-@click.option("--persona", "persona_yaml", required=True, type=click.Path(exists=True))
-@click.option("--out", "out_dir", required=True, type=click.Path())
-@click.option("--seed", "seed", required=True, type=int)
-@click.option("--qlora", is_flag=True, default=False)
-def fit(base_model_id: str, data_path: str, persona_yaml: str, out_dir: str, seed: int, qlora: bool) -> None:
-    """Train a LoRA/QLoRA adapter (stub)."""
-    run_dir = new_run_dir("fit")
-    set_global_seed(seed)
-    summary = train_sft(base_model_id, data_path, persona_yaml, out_dir, seed, use_qlora=qlora)
-    write_json(str(Path(run_dir) / "fit_summary.json"), summary)
-    click.echo(f"Fit complete. Summary: {run_dir}/fit_summary.json")
+@eval.command("head")
+@click.option("--report", "report_path", required=True, type=click.Path(exists=True), help="Path to a baseline report JSON")
+@click.option("--n", "n", default=5, show_default=True, type=int, help="Number of rows to display")
+def eval_head(report_path: str, n: int) -> None:
+    """Print the first N rows: (id, prompt[:80], output[:80]) for quick inspection."""
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            report = json.load(f)
+    except Exception as e:
+        raise SystemExit(f"Failed to read report: {e}")
 
+    items = report.get("items", []) or []
+    n = max(0, min(n, len(items)))
+    rows = items[:n]
 
-@cli.command()
-@click.option("--adapter", "adapter", required=True, type=str)
-@click.option("--evalset", "evalset_path", required=True, type=click.Path(exists=True))
-@click.option("--persona", "persona_yaml", required=False, type=click.Path(exists=True))
-@click.option("--report", "report_path", required=True, type=click.Path())
-def eval(adapter: str, evalset_path: str, persona_yaml: Optional[str], report_path: str) -> None:
-    """Run evaluation on the Golden set (stub)."""
-    run_dir = new_run_dir("eval")
-    adapter_path = None if adapter.lower() == "none" else adapter
-    summary = run_eval(adapter_path, evalset_path, persona_yaml, report_path)
-    write_json(str(Path(run_dir) / "eval_summary.json"), summary)
-    click.echo(f"Eval complete. Summary: {run_dir}/eval_summary.json")
+    def trunc(s: object, width: int) -> str:
+        txt = s if isinstance(s, str) else json.dumps(s, ensure_ascii=False)
+        txt = txt.replace("\n", " ").replace("\r", " ")
+        if len(txt) <= width:
+            return txt
+        return txt[: width - 1] + "…"
+
+    id_w = max(8, min(20, max((len(r.get("id", "")) for r in rows), default=8)))
+    p_w = 80
+    o_w = 80
+
+    header = f"{'id':<{id_w}}  {'prompt':<{p_w}}  {'output':<{o_w}}"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in rows:
+        idv = r.get("id", "")
+        prompt = r.get("prompt", "")
+        output = r.get("output", "")
+        click.echo(f"{trunc(idv, id_w):<{id_w}}  {trunc(prompt, p_w):<{p_w}}  {trunc(output, o_w):<{o_w}}")
 
 
 @cli.command()
