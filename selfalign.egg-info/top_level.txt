@@ -1,0 +1,6 @@
+adapters
+configs
+data
+reports
+runs
+selfalign

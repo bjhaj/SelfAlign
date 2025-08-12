@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "selfalign"
+version = "0.1.0"
+description = "SelfAlign Milestone 1: Personas + Synthetic SFT (scaffold)"
+authors = [{ name = "Your Name" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "transformers",
+  "accelerate",
+  "peft",
+  "bitsandbytes",
+  "datasets",
+  "pydantic",
+  "click",
+  "numpy",
+  "sentence-transformers",
+  "scikit-learn",
+  "tqdm",
+  "pyyaml",
+]
+
+[project.scripts]
+selfalign = "selfalign.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*"]

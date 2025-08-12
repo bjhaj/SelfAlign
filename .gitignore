@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+.python-version
+
+# Packaging / build
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+.cache/
+
+# Project artifacts (generated)
+runs/
+reports/
+adapters/
+# Keep eval configs versioned; ignore generated datasets
+data/sft/
+# Optional scratch/temp
+**/tmp/
+**/temp/

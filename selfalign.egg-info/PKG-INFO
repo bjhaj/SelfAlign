@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: selfalign
+Version: 0.1.0
+Summary: SelfAlign Milestone 1: Personas + Synthetic SFT (scaffold)
+Author: Your Name
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: transformers
+Requires-Dist: accelerate
+Requires-Dist: peft
+Requires-Dist: bitsandbytes
+Requires-Dist: datasets
+Requires-Dist: pydantic
+Requires-Dist: click
+Requires-Dist: numpy
+Requires-Dist: sentence-transformers
+Requires-Dist: scikit-learn
+Requires-Dist: tqdm
+
+# SelfAlign (Milestone 1: Personas + Synthetic SFT)
+
+SelfAlign is a scaffolded, reproducible pipeline to go from persona YAMLs → synthetic SFT datasets → LoRA/QLoRA adapters on a 7–8B base LLM → evaluation (style/refusal/safety) → hot-swappable adapters at runtime. Milestone 1 focuses on stubs and wiring; logic will be added in later phases.
+
+## Quickstart
+
+```bash
+selfalign doctor
+selfalign persona lint configs/personas/*.yaml
+selfalign data synth --persona configs/personas/socratic_skeptical.yaml --n 2000 --out data/sft/socratic_skeptical.v0.jsonl --seed 42
+selfalign fit --base llm:open-8b --data data/sft/socratic_skeptical.v0.jsonl --persona configs/personas/socratic_skeptical.yaml --out adapters/socratic-skeptical/0.1.0 --seed 42 --qlora
+selfalign eval --adapter adapters/socratic-skeptical/0.1.0 --evalset configs/eval/golden_v0.jsonl --report reports/socratic-0.1.0.json
+selfalign swap --adapter adapters/neutral-concise/0.1.0
+selfalign infer --adapter adapters/socratic-skeptical/0.1.0 -p "Explain the Lindy effect."
+```
+
+Note: Milestone 1 focuses on stubs and wiring; logic will be added in later phases.

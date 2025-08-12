@@ -1,0 +1,11 @@
+transformers
+accelerate
+peft
+bitsandbytes
+datasets
+pydantic
+click
+numpy
+sentence-transformers
+scikit-learn
+tqdm
